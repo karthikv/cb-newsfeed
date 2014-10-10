@@ -1,21 +1,18 @@
-var async = require('async');
-
 var soundCloud = require('./lib/soundcloud');
-var youTube    = require('./lib/youtube')
-var spotify    = require('./lib/spotify')
+var youTube = require('./lib/youtube')
+var spotify = require('./lib/spotify')
 
 var Post = require('./models/post.js');
 
 //  By default upon authentication, the access_token is saved, but you can add it like
-module.exports = function(app, nconf) {
+module.exports = function(app) {
   app.get('/', function(req, res) {
     res.render('index');
   });
 
   app.get('/search', function(req, res) {
-    console.log('Searching YouTube and Spotify [not SoundCloud] for %s', req.query.q);
-    async.parallel({
-      YouTube: function(callback) {
+    fns = [
+      function(callback) {
         youTube.search(req.query.q, function(error, body) {
           if (error) {
             throw error;
@@ -24,7 +21,7 @@ module.exports = function(app, nconf) {
           }
         });
       },
-      SoundCloud: function(callback) {
+      function(callback) {
         soundCloud.search(req.query.q, function(error, body) {
           if (error) {
             throw error;
@@ -33,7 +30,7 @@ module.exports = function(app, nconf) {
           }
         });
       },
-      Spotify: function(callback) {
+      function(callback) {
         spotify.search(req.query.q, function(error, body) {
           if (error) {
             throw error;
@@ -42,73 +39,57 @@ module.exports = function(app, nconf) {
           }
         });
       }
-    },
-    // callback
-    function(err, searchResults) {
-      var body = [];
-      var YouTube = JSON.parse(searchResults.YouTube);
-      var SoundCloud = JSON.parse(searchResults.SoundCloud);
-      var Spotify = JSON.parse(searchResults.Spotify);
+    ];
 
-      // rank options here
-      body.push(YouTube[0]);
-      body.push(Spotify[0]);
-      body.push(SoundCloud[0]);
-      res.send(200, JSON.stringify(body));
+    counter = 0;
+    results = []
+    fns.forEach(function(fn) {
+      fn(function(error, searchResults) {
+        counter += 1;
+        var parsedSearchResults = JSON.parse(searchResults);
+        if (parsedSearchResults[0]) {
+          results.push(parsedSearchResults[0]);
+        }
+        if (counter == fns.length) {
+          res.send(200, JSON.stringify(results));
+        }
+      });
     });
   });
 
-  app.post('/postContent', function(req, res) {
-    console.log('Posting content for "%s"', req.body.src);
-    var postContent = new Post({ src: req.body.src });
-    postContent.save(function(err, postContent) {
-      if (err) {
-        console.log(err);
-        throw err;
-      } else {
-        //dummy content to make sure a response is sent back!
-        res.send(200, "Post finished");
-      }
-    });
-  });
-
-  app.get('/getContent', function(req, res) {
-    Post.find(function(err, posts) {
-      res.send(posts);
-    });
-  });
-
-
-  app.get('/searchSoundCloud', function(req, res) {
-    console.log('Searching SoundCloud for "%s"', req.query.q);
-    soundCloud.search(req.query.q, function(error, body) {
+  app.post('/newsfeed', function(req, res) {
+    var post = new Post({ src: req.body.src });
+    post.save(function(error, post) {
       if (error) {
         throw error;
       } else {
-        res.send(200, body);
+        res.send(post);
       }
     });
   });
 
-  app.get('/searchYouTube', function(req, res) {
-    console.log('Searching YouTube for "%s"',  req.query.q);
-    youTube.search(req.query.q, function(error, body) {
+  app.get('/newsfeed', function(req, res) {
+    Post.find(function(error, posts) {
       if (error) {
         throw error;
       } else {
-        res.send(200, body);
+        res.send(posts);
       }
     });
   });
 
-  app.get('/searchSpotify', function(req, res) {
-    console.log('Searching Spotify for "%s"', req.query.q);
-    spotify.search(req.query.q, function(error, body) {
+  app.post('/newsfeed/:id/remove', function(req, res) {
+    Post.remove({'_id': req.params.id}, function(error, post) {
       if (error) {
         throw error;
       } else {
-        res.send(200, body);
+        res.send(204);
       }
-    });
+    })
+  });
+
+  app.post('/newsfeed/:id/upvote', function(req, res) {
+    console.log('upvote!');
+    res.send(204);
   });
 };
